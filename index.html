@@ -9,6 +9,9 @@
       --bg: #031b33;
       --card-bg: #072a4a;
       --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --orange: #f97316;
       --border: #1e4976;
       --text: #ffffff;
       --text-muted: #94a3b8;
@@ -53,13 +56,18 @@
 
     .badge {
       display: inline-block;
-      padding: 6px 12px;
+      padding: 6px 14px;
       border-radius: 20px;
       font-weight: bold;
       background-color: #15803d;
       color: white;
       margin-top: 5px;
+      font-size: 0.95rem;
     }
+
+    .badge-red { background-color: var(--red); }
+    .badge-yellow { background-color: var(--yellow); color: #031b33; }
+    .badge-orange { background-color: var(--orange); }
 
     select, input {
       width: 100%;
@@ -93,15 +101,26 @@
     }
 
     .schedule-item {
-      padding: 8px;
+      padding: 10px;
       border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
+      align-items: center;
     }
 
     .highlight {
       color: var(--green);
       font-weight: bold;
+    }
+
+    .alert-box {
+      padding: 12px;
+      border-radius: 6px;
+      background-color: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--red);
+      color: #fca5a5;
+      font-size: 0.9rem;
+      text-align: center;
     }
   </style>
 </head>
@@ -129,12 +148,7 @@
 
       <label for="select-parada" style="margin-top: 12px; display:block;">Seleccionar Parada:</label>
       <select id="select-parada">
-        <option value="Terminal">1. Terminal</option>
-        <option value="Spawn">2. Spawn</option>
-        <option value="Piscina">3. Piscina</option>
-        <option value="Esquinas">4. Esquinas</option>
-        <option value="Campamento">5. Campamento</option>
-        <option value="Playa">6. Playa</option>
+        <!-- Opciones dinámicas según sentido -->
       </select>
 
       <div id="schedule-results" class="schedule-list">
@@ -174,21 +188,80 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Sincronización en vivo de estados
+    let estadoActualGeneral = "Normal";
+
+    const paradasPlaya = [
+      { id: "Terminal", nombre: "1. Terminal" },
+      { id: "Spawn", nombre: "2. Spawn" },
+      { id: "Piscina", nombre: "3. Piscina" },
+      { id: "Esquinas", nombre: "4. Esquinas" },
+      { id: "Campamento", nombre: "5. Campamento" },
+      { id: "Playa", nombre: "6. Playa" }
+    ];
+
+    const paradasTerminal = [
+      { id: "Playa", nombre: "1. Playa" },
+      { id: "Campamento", nombre: "2. Campamento" },
+      { id: "Esquinas", nombre: "3. Esquinas" },
+      { id: "Piscina", nombre: "4. Piscina" },
+      { id: "Spawn", nombre: "5. Spawn" },
+      { id: "Terminal", nombre: "6. Terminal" }
+    ];
+
+    // Actualizar selector de paradas según sentido
+    function actualizarOpcionesParadas() {
+      const sentido = document.getElementById("select-sentido").value;
+      const selectParada = document.getElementById("select-parada");
+      const lista = sentido === "Playa" ? paradasPlaya : paradasTerminal;
+
+      selectParada.innerHTML = lista.map(p => `<option value="${p.id}">${p.nombre}</option>`).join("");
+    }
+
+    // Sincronización en vivo de estado general y terminal
     onSnapshot(doc(db, "uqt_config", "general"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        document.getElementById("status-31a").innerText = data.estado31A || "Servicio Normal 🟢";
+        estadoActualGeneral = data.estado31A || "Normal";
+
+        const statusEl = document.getElementById("status-31a");
+        statusEl.className = "badge";
+
+        if (estadoActualGeneral === "Normal") {
+          statusEl.innerText = "Normal 🟢 (Horarios Lun a Vie)";
+        } else if (estadoActualGeneral === "Fin de semana") {
+          statusEl.innerText = "Fin de Semana 🟡 (Horarios Sáb, Dom y Fer)";
+          statusEl.classList.add("badge-yellow");
+        } else if (estadoActualGeneral === "Reducido") {
+          statusEl.innerText = "Servicio Reducido 🟠";
+          statusEl.classList.add("badge-orange");
+        } else if (estadoActualGeneral === "No en funcionamiento") {
+          statusEl.innerText = "No en Funcionamiento 🔴";
+          statusEl.classList.add("badge-red");
+        } else {
+          statusEl.innerText = estadoActualGeneral;
+        }
+
         document.getElementById("status-terminal").innerText = data.estadoTerminal || "Abierta 🟢";
         document.getElementById("plataformas-text").innerText = data.plataformas || "__";
+
+        updateScheduleView();
       }
     });
 
-    // Filtro de Horarios
+    // Filtrar y renderizar la grilla de horarios
     async function updateScheduleView() {
       const sentido = document.getElementById("select-sentido").value;
       const parada = document.getElementById("select-parada").value;
       const container = document.getElementById("schedule-results");
+
+      if (estadoActualGeneral === "No en funcionamiento") {
+        container.innerHTML = `
+          <div class="alert-box">
+            🔴 <strong>SERVICIO INTERRUMPIDO</strong><br>
+            La Línea 31A no se encuentra prestando servicio temporalmente.
+          </div>`;
+        return;
+      }
 
       container.innerHTML = "<p style='color: var(--text-muted);'>Buscando salidas...</p>";
 
@@ -196,27 +269,47 @@
       const querySnapshot = await getDocs(q);
 
       container.innerHTML = "";
-      if (querySnapshot.empty) {
-        container.innerHTML = "<p style='color: var(--text-muted);'>No hay salidas registradas para este sentido.</p>";
-        return;
-      }
+      let contador = 0;
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.paradas && data.paradas[parada]) {
+
+        // Filtrado estricto por tipo de día según Estado General
+        let mostrar = false;
+        if (estadoActualGeneral === "Normal" && data.tipo === "Lun-Vie") mostrar = true;
+        else if (estadoActualGeneral === "Fin de semana" && data.tipo === "Sab-Dom-Fer") mostrar = true;
+        else if (estadoActualGeneral === "Reducido") mostrar = true; // En reducido muestra disponibilidad general
+
+        if (mostrar && data.paradas && data.paradas[parada]) {
+          contador++;
+          const estadoBadge = data.estado ? `<small style="color: var(--text-muted);">[${data.estado}]</small>` : '';
+          
           container.innerHTML += `
             <div class="schedule-item">
-              <span><strong>Servicio ${doc.id}</strong> (${data.tipo})</span>
+              <div>
+                <strong>Servicio ${doc.id}</strong> ${estadoBadge}
+              </div>
               <span class="highlight">Pasa: ${data.paradas[parada]} hs</span>
             </div>
           `;
         }
       });
+
+      if (contador === 0) {
+        container.innerHTML = "<p style='color: var(--text-muted);'>No hay salidas disponibles para este cronograma y parada.</p>";
+      }
     }
 
-    document.getElementById("select-sentido").addEventListener("change", updateScheduleView);
+    // Event Listeners
+    document.getElementById("select-sentido").addEventListener("change", () => {
+      actualizarOpcionesParadas();
+      updateScheduleView();
+    });
+
     document.getElementById("select-parada").addEventListener("change", updateScheduleView);
-    updateScheduleView();
+
+    // Inicialización
+    actualizarOpcionesParadas();
   </script>
 </body>
 </html>
