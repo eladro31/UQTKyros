@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UQT S.A. - Pasajeros Línea 31A</title>
+  <style>
+    :root {
+      --bg: #031b33;
+      --card-bg: #072a4a;
+      --green: #22c55e;
+      --border: #1e4976;
+      --text: #ffffff;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 15px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .header-greeting {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: var(--green);
+      margin-bottom: 5px;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.1rem;
+      color: var(--green);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-weight: bold;
+      background-color: #15803d;
+      color: white;
+      margin-top: 5px;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background-color: var(--bg);
+      color: white;
+      box-sizing: border-box;
+    }
+
+    .btn-pdf {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background-color: var(--green);
+      color: #031b33;
+      font-weight: bold;
+      padding: 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1rem;
+      margin-top: 15px;
+      box-sizing: border-box;
+    }
+
+    .schedule-list {
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+
+    .schedule-item {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .highlight {
+      color: var(--green);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header-greeting">¡Buenas! 👋</div>
+    <p style="color: var(--text-muted); margin-top: 0;">Bienvenido al portal de la Línea 31A de UQT S.A.</p>
+
+    <!-- Estado del Servicio -->
+    <div class="card">
+      <h2>Estado del Servicio Línea 31A</h2>
+      <div id="status-31a" class="badge">Cargando...</div>
+    </div>
+
+    <!-- Ver Horarios por Parada -->
+    <div class="card">
+      <h2>Ver Horarios por Parada</h2>
+      
+      <label for="select-sentido">Sentido de Circulación:</label>
+      <select id="select-sentido">
+        <option value="Playa">Hacia Playa (Ida)</option>
+        <option value="Terminal">Hacia Terminal (Vuelta)</option>
+      </select>
+
+      <label for="select-parada" style="margin-top: 12px; display:block;">Seleccionar Parada:</label>
+      <select id="select-parada">
+        <option value="Terminal">1. Terminal</option>
+        <option value="Spawn">2. Spawn</option>
+        <option value="Piscina">3. Piscina</option>
+        <option value="Esquinas">4. Esquinas</option>
+        <option value="Campamento">5. Campamento</option>
+        <option value="Playa">6. Playa</option>
+      </select>
+
+      <div id="schedule-results" class="schedule-list">
+        <!-- Los horarios filtrados aparecen aquí -->
+      </div>
+    </div>
+
+    <!-- Estado Terminal Brookhaven -->
+    <div class="card">
+      <h2>Estado Terminal Brookhaven</h2>
+      <div id="status-terminal" class="badge">Cargando...</div>
+      <p style="margin-top: 12px; font-size: 0.95rem;">
+        Hoy la línea 31A para en las plataformas <span id="plataformas-text" class="highlight">__</span> de la terminal.
+      </p>
+    </div>
+
+    <!-- Botón Descargar PDF -->
+    <a href="Horarios_y_Tarifas_Linea_31A_UQT.pdf" download class="btn-pdf">
+      📄 DESCARGAR PDF DE HORARIOS Y TARIFAS
+    </a>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCqxQMrZatu32xnJAkVrrFLoLXNymJeH3A",
+      authDomain: "uqtkyros.firebaseapp.com",
+      projectId: "uqtkyros",
+      storageBucket: "uqtkyros.firebasestorage.app",
+      messagingSenderId: "209955691423",
+      appId: "1:209955691423:web:916e78851d938f2f537baa",
+      measurementId: "G-Z31MPBSJS5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Sincronización en vivo de estados
+    onSnapshot(doc(db, "uqt_config", "general"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        document.getElementById("status-31a").innerText = data.estado31A || "Servicio Normal 🟢";
+        document.getElementById("status-terminal").innerText = data.estadoTerminal || "Abierta 🟢";
+        document.getElementById("plataformas-text").innerText = data.plataformas || "__";
+      }
+    });
+
+    // Filtro de Horarios
+    async function updateScheduleView() {
+      const sentido = document.getElementById("select-sentido").value;
+      const parada = document.getElementById("select-parada").value;
+      const container = document.getElementById("schedule-results");
+
+      container.innerHTML = "<p style='color: var(--text-muted);'>Buscando salidas...</p>";
+
+      const q = query(collection(db, "horarios"), where("sentido", "==", sentido));
+      const querySnapshot = await getDocs(q);
+
+      container.innerHTML = "";
+      if (querySnapshot.empty) {
+        container.innerHTML = "<p style='color: var(--text-muted);'>No hay salidas registradas para este sentido.</p>";
+        return;
+      }
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.paradas && data.paradas[parada]) {
+          container.innerHTML += `
+            <div class="schedule-item">
+              <span><strong>Servicio ${doc.id}</strong> (${data.tipo})</span>
+              <span class="highlight">Pasa: ${data.paradas[parada]} hs</span>
+            </div>
+          `;
+        }
+      });
+    }
+
+    document.getElementById("select-sentido").addEventListener("change", updateScheduleView);
+    document.getElementById("select-parada").addEventListener("change", updateScheduleView);
+    updateScheduleView();
+  </script>
+</body>
+</html>
